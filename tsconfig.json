@@ -1,0 +1,21 @@
+{
+  "compilerOptions": {
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "moduleResolution": "Node",
+    "downlevelIteration": true,
+    "resolveJsonModule": true,
+    "target": "ESNext",
+    "lib": [
+      "ESNext",
+      "WebWorker",
+      "DOM"
+    ],
+    "types": [
+      "@cloudflare/workers-types"
+    ],
+  },
+  "exclude": [
+    "node_modules"
+  ]
+}

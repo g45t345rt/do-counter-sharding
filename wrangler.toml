@@ -1,0 +1,11 @@
+name = "do-counter-sharding"
+type = "javascript"
+workers_dev = true
+compatibility_date = "2021-09-24"
+
+build = { command = "npm run build", upload = { format = "modules", dir = "dist", main = "./index.mjs"  } }
+durable_objects = { bindings = [
+  { name = "COUNTER_DO", class_name = "CounterDurableObject" }
+]}
+kv_namespaces = [ { binding = "KV", id = "" }]
+miniflare = { kv_persist = true, durable_objects_persist = true }

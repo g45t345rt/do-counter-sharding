@@ -1,0 +1,14 @@
+{
+  "name": "do-counter-sharding",
+  "private": "true",
+  "scripts": {
+    "build": "esbuild ./src/index.ts --format=esm --bundle --outdir=dist --out-extension:.js=.mjs",
+    "start": "miniflare -w"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^3.3.1",
+    "esbuild": "^0.14.14",
+    "miniflare": "^2.2.0",
+    "ts-node": "^10.4.0"
+  }
+}
