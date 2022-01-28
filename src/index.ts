@@ -63,7 +63,7 @@ export default {
     const url = new URL(request.url)
     if (url.pathname === '/total') {
       const count = await env.KV.get(`total`)
-      return new Response(count)
+      return new Response(`${count || 0}`)
     }
 
     // count every request with sharding - add another id in the list to handle more request
