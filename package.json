@@ -14,5 +14,9 @@
     "isomorphic-fetch": "^3.0.0",
     "miniflare": "^2.2.0",
     "ts-node": "^10.4.0"
+  },
+  "dependencies": {
+    "itty-router": "^2.4.10",
+    "nanoid": "^3.2.0"
   }
 }
