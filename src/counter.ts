@@ -22,7 +22,7 @@ export default class CounterDurableObject implements DurableObject {
   globalWriteToKVAfter = 1000 * 5
   globalWriteToKVTimeoutId: number
 
-  writes: number
+  writes = 0
   count: number
 
   constructor(state: DurableObjectState, env: EnvInterface) {
@@ -92,6 +92,7 @@ export default class CounterDurableObject implements DurableObject {
     router.post(`/global/write`, async (request: Request) => {
       const writeInfo = await request.json<WriteInfo>()
       this.count += writeInfo.count
+      this.writes++
       this.state.storage.put(`count`, this.count)
       this.putWriteInfo(writeInfo)
 
@@ -140,12 +141,33 @@ export default class CounterDurableObject implements DurableObject {
     router.get(`/global/shardWrites`, async () => {
       const result = await this.state.storage.list<WriteInfo>({ prefix: `writes~`, reverse: true })
       const writes = [...result]
-      const shardWrites = writes.map(([_, w]) => w).filter(w => w.event !== 'writeToKV').map(w => w.count)
-      const total = shardWrites.reduce((c, t) => c + t, 0)
+      const shardWrites = {}
+
+      writes.map(([_, w]) => w).forEach((w) => {
+        if (w.shardName === 'global') return
+        if (!shardWrites[w.shardName]) {
+          shardWrites[w.shardName] = {
+            count: 0,
+            write: 0
+          }
+        }
+
+        shardWrites[w.shardName].count += w.count
+        shardWrites[w.shardName].write++
+      })
+
+      let totalCount = 0, totalWrite = 0
+      Object.keys(shardWrites).forEach((k) => {
+        const sw = shardWrites[k]
+        totalCount += sw.count
+        totalWrite += sw.write
+      })
+
       return new Response(JSON.stringify({
         shardWrites,
-        total
-      }))
+        totalCount,
+        totalWrite
+      }, null, 2))
     })
 
     router.get(`/increment`, async () => {
