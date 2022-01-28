@@ -7,7 +7,7 @@
 
 ## API
 
-`/reset` reset the global count
+`/reset` reset the global count  
 `/writes` display write events from all shards (useful for understanding   how it works)  
 `/increment` increment global count by dispatching to other shards  
 `/total` view total global count  
