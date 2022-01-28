@@ -26,17 +26,20 @@ const main = async () => {
   const fetchIncrement = async () => {
     const res = await fetch(`${endpoint}/increment`)
     if (!res.ok) {
-      console.log(res.statusText)
+      console.log(res)
       failedIncrement++
     }
   }
 
+  const requests = []
   while (counter < maxCount) {
-    fetchIncrement() // don't await to send faster
+    requests.push(fetchIncrement()) // don't await here send all the request right away (simulate a burst)
     counter++
   }
 
-  console.log(`${counter} requests sent.`)
+  await Promise.all(requests)
+
+  console.log(`${counter} requests sent, ${failedIncrement} failed, counter should be ${counter - failedIncrement}.`)
 }
 
 main()
