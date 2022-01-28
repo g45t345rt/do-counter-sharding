@@ -6,12 +6,14 @@
     "downlevelIteration": true,
     "resolveJsonModule": true,
     "target": "ESNext",
+    "module": "ESNext",
     "lib": [
       "ESNext",
       "WebWorker",
       "DOM"
     ],
     "types": [
+      "node",
       "@cloudflare/workers-types"
     ],
   },

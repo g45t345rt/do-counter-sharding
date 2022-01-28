@@ -3,12 +3,15 @@
   "private": "true",
   "scripts": {
     "build": "esbuild ./src/index.ts --format=esm --bundle --outdir=dist --out-extension:.js=.mjs",
-    "start": "miniflare -w"
+    "start": "miniflare -w",
+    "test-counter": "ts-node ./scripts/requests.test.ts"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^3.3.1",
+    "@types/node": "^17.0.13",
     "esbuild": "^0.14.14",
     "miniflare": "^2.2.0",
+    "node-fetch": "^3.2.0",
     "ts-node": "^10.4.0"
   }
 }
