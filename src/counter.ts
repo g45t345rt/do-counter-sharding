@@ -147,26 +147,28 @@ export default class CounterDurableObject implements DurableObject {
         if (w.shardName === 'global') return
         if (!shardWrites[w.shardName]) {
           shardWrites[w.shardName] = {
-            count: 0,
-            write: 0
+            incrementCount: 0,
+            writeCount: 0
           }
         }
 
-        shardWrites[w.shardName].count += w.count
-        shardWrites[w.shardName].write++
+        shardWrites[w.shardName].incrementCount += w.count
+        shardWrites[w.shardName].writeCount++
       })
 
-      let totalCount = 0, totalWrite = 0
+      let totalCount = 0, totalWrite = 0, totalShards = 0
       Object.keys(shardWrites).forEach((k) => {
         const sw = shardWrites[k]
-        totalCount += sw.count
-        totalWrite += sw.write
+        totalCount += sw.incrementCount
+        totalWrite += sw.writeCount
+        totalShards++
       })
 
       return new Response(JSON.stringify({
         shardWrites,
         totalCount,
-        totalWrite
+        totalWrite,
+        totalShards
       }, null, 2))
     })
 
