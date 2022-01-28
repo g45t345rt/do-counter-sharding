@@ -1,12 +1,20 @@
+type WriteInfo = {
+  count: number
+  shardName: string
+  event: 'exceedMaxCount' | 'afterNoIncrement'
+  timestamp: number
+}
+
 export class CounterDurableObject implements DurableObject {
   state: DurableObjectState
   env: EnvInterface
 
-  static shardCount = 2 // 10 shards meaning we could handle 10*100 - 1000 requests per seconds
-  maxCount = 100 // useless to put a number higher than 100 since a DO can't handle more than 100r/s
+  static shardCount = 10 // 10 shards meaning we could handle 10*100 - 1000 requests per seconds
+  maxCount = 100 // it's useless to put a number higher than 100 since a DO can't handle more than 100r/s
   writeIfNoIncrementAfter = 1000 * 5 // 5s - if a DO does not receive anymore increment after 5s it will write to the global counter
   timeoutId: number
 
+  writes: WriteInfo[]
   count: number
 
   constructor(state: DurableObjectState, env: EnvInterface) {
@@ -15,6 +23,7 @@ export class CounterDurableObject implements DurableObject {
 
     this.state.blockConcurrencyWhile(async () => {
       this.count = await this.state.storage.get('count') || 0
+      this.writes = await this.state.storage.get('writes') || []
     })
   }
 
@@ -32,17 +41,28 @@ export class CounterDurableObject implements DurableObject {
     return env.COUNTER_DO.get(id)
   }
 
-  async incrementGlobal() {
+  async incrementGlobal(event: string, shardName: string) {
+    const holdCount = this.count
+    this.count = 0
+    this.state.storage.deleteAll()
+
+    const writeInfo = {
+      count: holdCount,
+      event,
+      shardName,
+      timestamp: new Date().getTime()
+    } as WriteInfo
+
     const globalStub = CounterDurableObject.globalStub(this.env)
     const res = await globalStub.fetch(`/incrementGlobalCount`, {
       method: 'POST',
-      body: JSON.stringify(this.count)
+      body: JSON.stringify(writeInfo)
     })
 
-    if (res.ok) {
-      this.count = 0
-      this.state.storage.deleteAll()
-      console.log(`shard deleted`)
+    if (!res.ok) {
+      // was not able to write to global
+      this.count += holdCount // we increment instead of equal because the DO might have received new request during the write global
+      this.state.storage.put(`count`, this.count)
     }
   }
 
@@ -55,17 +75,20 @@ export class CounterDurableObject implements DurableObject {
 
     if (method === 'POST') {
       if (pathname === '/incrementGlobalCount') {
-        const count = await request.json<number>()
-        console.log(count)
-        this.count += count
+        const writeInfo = await request.json<WriteInfo>()
+        this.count += writeInfo.count
         this.state.storage.put(`count`, this.count)
+        this.writes = [writeInfo, ...this.writes]
+        this.state.storage.put(`writes`, this.writes)
         this.env.KV.put(`total`, JSON.stringify(this.count))
         return new Response(`Global saved.`)
       }
 
-      if (pathname === '/reset') {
+      if (pathname === '/resetGlobalCount') {
         this.count = 0
         this.state.storage.put(`count`, this.count)
+        this.writes = []
+        this.state.storage.put(`writes`, this.writes)
         this.env.KV.put(`total`, JSON.stringify(this.count))
         return new Response(`Global reset.`)
       }
@@ -79,7 +102,7 @@ export class CounterDurableObject implements DurableObject {
         // Write to global if no increment after a certain amount of time
         this.timeoutId = setTimeout(async () => {
           console.log(`timeout write`)
-          await this.incrementGlobal() // the await is here is IMPORTANT
+          await this.incrementGlobal('afterNoIncrement', name) // the await is here is IMPORTANT
         }, this.writeIfNoIncrementAfter)
 
         this.count += 1
@@ -87,7 +110,7 @@ export class CounterDurableObject implements DurableObject {
         if (this.count >= this.maxCount) {
           console.log(`max exceed write`)
           clearTimeout(this.timeoutId)
-          await this.incrementGlobal() // the await is here is also IMPORTANT
+          await this.incrementGlobal('exceedMaxCount', name) // the await is here is also IMPORTANT
         } else {
           this.state.storage.put(`count`, this.count)
         }
@@ -104,6 +127,10 @@ export class CounterDurableObject implements DurableObject {
         }
 
         return new Response(JSON.stringify(counts))
+      }
+
+      if (pathname === '/writes') {
+        return new Response(JSON.stringify(this.writes, null, 2))
       }
 
       if (pathname === '/count') {
@@ -125,7 +152,12 @@ export default {
 
     if (url.pathname === '/reset') {
       const globalStub = CounterDurableObject.globalStub(env)
-      return globalStub.fetch(`/reset`, { method: 'POST' })
+      return globalStub.fetch(`/resetGlobalCount`, { method: 'POST' })
+    }
+
+    if (url.pathname === '/writes') {
+      const globalStub = CounterDurableObject.globalStub(env)
+      return globalStub.fetch(`/writes`)
     }
 
     const stubCounter = CounterDurableObject.shardStub(env)

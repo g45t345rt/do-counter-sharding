@@ -5,11 +5,10 @@
     "moduleResolution": "Node",
     "downlevelIteration": true,
     "resolveJsonModule": true,
-    "target": "ESNext",
-    "module": "ESNext",
+    "target": "ES6",
     "lib": [
       "WebWorker",
-      "DOM"
+      "DOM",
     ],
     "types": [
       "node",

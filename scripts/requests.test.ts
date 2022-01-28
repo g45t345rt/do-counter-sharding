@@ -1,28 +1,40 @@
-//@ts-ignore
-const fetch = (...args) => import('node-fetch').then(({ default: fetch }) => fetch(...args))
+import 'isomorphic-fetch'
+import inquirer from 'inquirer'
 
-const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
+// const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
+
+const baseUrl = `http://localhost:8787`
 
 const main = async () => {
-  let res = await fetch(`http://localhost:8787/reset`)
-  if (!res.ok) throw res
+  const answers = await inquirer.prompt([
+    { name: 'endpoint', type: 'input', message: 'Url endpoint', default: baseUrl },
+    { name: 'reset', type: 'confirm', message: 'Reset global count?', default: true },
+    { name: 'waitFetch', type: 'confirm', message: 'Wait fetch to finish before sending another?', default: false },
+    { name: 'maxCount', type: 'number', message: 'Number of /increment request to send', default: 100 }
+  ])
+
+  const { endpoint, reset, waitFetch, maxCount } = answers
+
+  let res = null
+
+  if (reset) {
+    let res = await fetch(`${endpoint}/reset`)
+    if (!res.ok) throw res
+  }
 
   let counter = 0
-  while (counter < 1000) {
-    res = await fetch(`http://localhost:8787/increment`)
-    if (!res.ok) throw res
+  while (counter < maxCount) {
+    if (waitFetch) {
+      res = await fetch(`${endpoint}/increment`)
+      if (!res.ok) throw res
+    } else {
+      fetch(`${endpoint}/increment`)
+    }
 
     counter++
   }
 
-  console.log(`Waiting for 6s... - write after is set to 5s`)
-  await sleep(1000 * 6)
-  res = await fetch(`http://localhost:8787/total`)
-  if (!res.ok) throw res
-
-  const total = await res.json()
-
-  console.log(`Local counter: ${counter} | External counter: ${total}`)
+  console.log(`${counter} requests sent.`)
 }
 
 main()

@@ -7,5 +7,6 @@ build = { command = "npm run build", upload = { format = "modules", dir = "dist"
 durable_objects = { bindings = [
   { name = "COUNTER_DO", class_name = "CounterDurableObject" }
 ]}
-kv_namespaces = [ { binding = "KV", id = "" }]
+migrations = [{ tag = "v1", new_classes = ["CounterDurableObject"] }]
+kv_namespaces = [ { binding = "KV", id = "d1cb4378151545fa9686bc4fe47c2fa6" }]
 miniflare = { kv_persist = true, durable_objects_persist = true }
