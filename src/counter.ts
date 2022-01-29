@@ -1,6 +1,8 @@
 import { Router } from 'itty-router'
 import { nanoid } from 'nanoid'
 
+import { mergeHeaders } from './misc'
+
 type WriteInfo = {
   count: number
   shardName: string
@@ -40,7 +42,22 @@ export default class CounterDurableObject implements DurableObject {
     }
 
     const id = env.COUNTER_DO.idFromName(`counter~shard${shardNumber}`)
-    return env.COUNTER_DO.get(id)
+    const stub = env.COUNTER_DO.get(id)
+
+    return {
+      ...stub,
+      fetch: (requestOrUrl: string | Request, requestInit?: Request | RequestInit) => {
+        let headers = mergeHeaders(requestOrUrl, requestInit)
+        
+        // Pass shardName in headers to know where the writeToGlobal comes from
+        headers.set(`shardName`, stub.name)
+
+        return stub.fetch(requestOrUrl, {
+          ...requestInit,
+          headers
+        })
+      }
+    }
   }
 
   static globalStub(env: EnvInterface) {

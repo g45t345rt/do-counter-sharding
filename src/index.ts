@@ -10,7 +10,7 @@ router.get(`/total`, async (_, env: EnvInterface) => {
 
 router.get(`/increment`, (request: Request, env: EnvInterface) => {
   const stubCounter = CounterDurableObject.shardStub(env)
-  return stubCounter.fetch(request, { headers: { shardName: stubCounter.name } })
+  return stubCounter.fetch(request)
 })
 
 router.get(`/global/:action`, (request: Request, env: EnvInterface) => {
@@ -21,7 +21,7 @@ router.get(`/global/:action`, (request: Request, env: EnvInterface) => {
 router.get(`/:shardNumber/:action`, (request: Request, env: EnvInterface) => {
   const { shardNumber } = request.params
   const shardStub = CounterDurableObject.shardStub(env, Number(shardNumber))
-  return shardStub.fetch(request, { headers: { shardName: shardStub.name } })
+  return shardStub.fetch(request)
 })
 
 router.all(`*`, () => new Response(`nothing`))
