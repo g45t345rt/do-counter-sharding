@@ -3,25 +3,28 @@ import CounterDurableObject from './counter'
 
 const router = Router()
 
-router.get(`/total`, async (_, env: EnvInterface) => {
-  const count = await env.KV.get(`total`)
-  return new Response(`${count || 0}`)
+router.get(`/:prefix/total`, async (request: Request, env: EnvInterface) => {
+  const { prefix } = request.params
+  const total = await CounterDurableObject.kvTotal(env, prefix)
+  return new Response(`${total}`)
 })
 
-router.get(`/increment`, (request: Request, env: EnvInterface) => {
-  const stubCounter = CounterDurableObject.shardStub(env)
-  return stubCounter.fetch(request)
+router.get(`/:prefix/increment`, (request: Request, env: EnvInterface) => {
+  const { prefix } = request.params
+  const stubCounter = CounterDurableObject.shardStub(env, prefix)
+  return stubCounter.fetch(`/increment`, request)
 })
 
-router.get(`/global/:action`, (request: Request, env: EnvInterface) => {
-  const globalStub = CounterDurableObject.globalStub(env)
-  return globalStub.fetch(request)
+router.get(`/:prefix/global/:action`, (request: Request, env: EnvInterface) => {
+  const { prefix, action } = request.params
+  const globalStub = CounterDurableObject.globalStub(env, prefix)
+  return globalStub.fetch(action, request)
 })
 
-router.get(`/:shardNumber/:action`, (request: Request, env: EnvInterface) => {
-  const { shardNumber } = request.params
-  const shardStub = CounterDurableObject.shardStub(env, Number(shardNumber))
-  return shardStub.fetch(request)
+router.get(`/:prefix/shard/:shardNumber/:action`, (request: Request, env: EnvInterface) => {
+  const { prefix, shardNumber, action } = request.params
+  const shardStub = CounterDurableObject.shardStub(env, prefix, Number(shardNumber))
+  return shardStub.fetch(action, request)
 })
 
 router.all(`*`, () => new Response(`nothing`))
