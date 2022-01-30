@@ -1,10 +1,5 @@
 # DO COUNTER SHARDING
 
-## DEV
-
-`npm start` run DO with miniflare  
-`npm run test-counter` test DO by sending a lot /increment requests  
-
 ## Extends CounterDurableObject class
 
 Do not export `CounterDurableObject` directly as a binding.  
@@ -28,7 +23,7 @@ class Metrics extends CounterDurableObject {
 
 #### Global Worker
 
-`/global/reset` reset all counters from global  
+`/global/reset/:counterName` reset specifc counter from global  
 `/global/counters` view global counters from global DurableObject storage  
 `/global/writes` display write events from all shards (useful for understanding how it works)  
 `/global/shardWrites` display write counts with sum total  
@@ -41,7 +36,7 @@ class Metrics extends CounterDurableObject {
 
 #### Worker
 
-`/increment/:counter` increment a global counter by dispatching work to other shards  
+`/increment/:counterName` increment a global counter by dispatching work to other shards  
 `/counters` view global counters from KV
 
 ### From Stub perspective
@@ -49,7 +44,7 @@ class Metrics extends CounterDurableObject {
 #### Global Stub
 
 Use `CounterDurableObject.globalStub(env)`
-`/reset`, `/write`, `/counters`, `/writes`, `/shardWrites`, `/shards`
+`/reset/:counterName`, `/write`, `/counters`, `/writes`, `/shardWrites`, `/shards`
 
 ```ts
   // Metrics is a class extending CounterDurableObject
@@ -68,3 +63,8 @@ Use `CounterDurableObject.shardStub(env, shardNumber?)`
 ```
 
 Leaving `shardNumber` empty will randomly choose a shard for you
+
+## DEV
+
+`npm start` run DO with miniflare  
+`npm run test-counter` test DO by sending a lot /increment requests  

@@ -23,6 +23,7 @@ export abstract class CounterDurableObject implements DurableObject {
   env: EnvInterface
 
   static doNamespace: string
+  static kvNamespace: string
   static kvPrefix: string
   static shardCount: number
   static shardMinRequestToGlobal: number
@@ -44,13 +45,18 @@ export abstract class CounterDurableObject implements DurableObject {
     this.env = env
 
     const staticClass = this.getStaticClass()
-    const { kvPrefix, shardCount, shardMinRequestToGlobal, shardWriteToGlobalAfter, globalWriteToKVAfter, globalMinWritesToKV } = staticClass
+    const { doNamespace, kvNamespace, kvPrefix, shardCount, shardMinRequestToGlobal, shardWriteToGlobalAfter, globalWriteToKVAfter, globalMinWritesToKV } = staticClass
+
+    if (nullOrUndefined(kvNamespace)) throw `[static kvNamespace] not set.`
+    if (nullOrUndefined(doNamespace)) throw `[static doNamespace] not set.`
     if (nullOrUndefined(kvPrefix)) throw `[static kvPrefix] not set.`
     if (nullOrUndefined(shardCount)) throw `[static shardCount] not set.`
     if (nullOrUndefined(shardMinRequestToGlobal)) throw `[static shardMinRequestsToGlobal] not set.`
     if (nullOrUndefined(shardWriteToGlobalAfter)) throw `[static shardWriteToGlobalAfter] not set.`
     if (nullOrUndefined(globalWriteToKVAfter)) throw `[static globalWriteToKVAfter] not set.`
     if (nullOrUndefined(globalMinWritesToKV)) throw `[static globalMinWritesToKV] not set.`
+
+    if (!this.env[kvNamespace]) throw `Namespace [${kvNamespace}] does not exists.`
 
     this.state.blockConcurrencyWhile(async () => {
       this.counters = await this.state.storage.get('counters') || {}
@@ -63,7 +69,7 @@ export abstract class CounterDurableObject implements DurableObject {
     }
 
     const namespace = env[this.doNamespace] as DurableObjectNamespace
-    if (!namespace) throw `Namepsace [${this.doNamespace}] does not exists.`
+    if (!namespace) throw `Namespace [${this.doNamespace}] does not exists.`
     const id = namespace.idFromName(`shard${shardNumber}`)
     const stub = namespace.get(id)
 
@@ -104,7 +110,7 @@ export abstract class CounterDurableObject implements DurableObject {
   }
 
   static async kvCounters(env: EnvInterface) {
-    return await env.KV.get<Counters>(`${this.kvPrefix}~counters`, 'json')
+    return await env[this.kvNamespace].get<Counters>(`${this.kvPrefix}~counters`, 'json')
   }
 
   getStaticClass() {
@@ -160,7 +166,7 @@ export abstract class CounterDurableObject implements DurableObject {
 
   saveKVCounters() {
     const staticClass = this.getStaticClass()
-    this.env.KV.put(`${staticClass.kvPrefix}~counters`, JSON.stringify(this.counters))
+    this.env[staticClass.kvNamespace].put(`${staticClass.kvPrefix}~counters`, JSON.stringify(this.counters))
   }
 
   assignCounters(source: Counters, target: Counters) {
@@ -198,11 +204,13 @@ export abstract class CounterDurableObject implements DurableObject {
       return new Response(`Global saved.`)
     })
 
-    router.get(`/reset`, () => {
-      this.counters = {}
-      this.state.storage.deleteAll()
+    router.post(`/reset/:counter`, (request: Request) => {
+      const { counter } = request.params
+      if (!this.counters[counter]) return new Response(`[${counter}] not defined.`)
 
-      return new Response(`Global reset.`)
+      Reflect.deleteProperty(this.counters, counter)
+      this.saveCounters()
+      return new Response(`[${counter}] reset.`)
     })
 
     router.get(`/shards`, async () => {
@@ -266,8 +274,23 @@ export abstract class CounterDurableObject implements DurableObject {
   handleShardFetch(router: Router<any>) {
     const staticClass = this.getStaticClass()
 
-    router.get(`/increment/:counter`, async (request: Request) => {
+    router.post(`/increment/:counter`, async (request: Request) => {
       const { counter } = request.params
+
+      let value = 1
+      const body = await request.text()
+
+      if (body) {
+        try {
+          const bodyValue = JSON.parse(body)
+
+          if (typeof bodyValue !== 'number') return new Response(`[body] must be a number.`, { status: 400 })
+          value = bodyValue
+        } catch {
+          return new Response(`Invalid json.`, { status: 400 })
+        }
+      }
+
       if (this.shardWriteToGlobalTimeoutId) clearTimeout(this.shardWriteToGlobalTimeoutId)
 
       // Write to global if no increment after a certain amount of time
@@ -279,7 +302,7 @@ export abstract class CounterDurableObject implements DurableObject {
       }
 
       if (!this.counters[counter]) this.counters[counter] = 0
-      this.counters[counter] += 1
+      this.counters[counter] += value
       this.requests++
 
       // Directly write to global if it exceed to max amount in buffer
@@ -293,7 +316,7 @@ export abstract class CounterDurableObject implements DurableObject {
       return new Response(this.shardName)
     })
 
-    router.get(`/write`, async () => {
+    router.post(`/write`, async () => {
       if (Object.keys(this.counters).length === 0) return new Response(`nothing to write`)
       await this.writeToGlobal('requestWrite')
       return new Response(`writeToGlobal`)
