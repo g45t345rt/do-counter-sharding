@@ -1,54 +1,71 @@
 import { Router } from 'itty-router'
 import { nanoid } from 'nanoid'
 
-import { mergeHeaders } from './misc'
+import { mergeHeaders, nullOrUndefined } from './misc'
 
-type WriteInfoEvent = 'exceedMaxCount' | 'afterNoIncrement' | 'writeToKV' | 'requestWrite'
+type WriteInfoEvent = 'exceedMaxRequest' | 'afterNoRequest' | 'requestWrite'
+type WriteInfoCMD = 'writeToKV' | 'writeToGlobal'
+
+interface Counters {
+  [key: string]: number
+}
 
 type WriteInfo = {
-  count: number
+  counters: Counters
   shardName: string
-  event: WriteInfoEvent,
+  cmd: WriteInfoCMD
+  event: WriteInfoEvent
   timestamp: number
 }
 
-export default class CounterDurableObject implements DurableObject {
+export abstract class CounterDurableObject implements DurableObject {
   state: DurableObjectState
   env: EnvInterface
 
-  static shardCount = 10 // 10 shards meaning we could handle 10*100 - 1000 requests per seconds
+  static doNamespace: string
+  static kvPrefix: string
+  static shardCount: number
+  static shardMinRequestToGlobal: number
+  static shardWriteToGlobalAfter: number
+  static globalMinWritesToKV: number
+  static globalWriteToKVAfter: number
 
-  shardMinCountToGlobal = 100 // higher number will write to global less often
-  shardWriteToGlobalAfter = 1000 * 5 // 5s - if a DO does not receive anymore increment after 5s it will write to the global counter
   shardWriteToGlobalTimeoutId: number
-
-  globalMinWritesToKV = 100
-  globalWriteToKVAfter = 1000 * 5
   globalWriteToKVTimeoutId: number
 
   writes = 0
-  count = 0
+  requests = 0
+  counters: Counters
 
-  // assigned by headers in fetch()
-  shardName: string
-  prefix: string
+  shardName: string // assigned by headers in fetch()
 
   constructor(state: DurableObjectState, env: EnvInterface) {
     this.state = state
     this.env = env
 
+    const staticClass = this.getStaticClass()
+    const { kvPrefix, shardCount, shardMinRequestToGlobal, shardWriteToGlobalAfter, globalWriteToKVAfter, globalMinWritesToKV } = staticClass
+    if (nullOrUndefined(kvPrefix)) throw `[static kvPrefix] not set.`
+    if (nullOrUndefined(shardCount)) throw `[static shardCount] not set.`
+    if (nullOrUndefined(shardMinRequestToGlobal)) throw `[static shardMinRequestsToGlobal] not set.`
+    if (nullOrUndefined(shardWriteToGlobalAfter)) throw `[static shardWriteToGlobalAfter] not set.`
+    if (nullOrUndefined(globalWriteToKVAfter)) throw `[static globalWriteToKVAfter] not set.`
+    if (nullOrUndefined(globalMinWritesToKV)) throw `[static globalMinWritesToKV] not set.`
+
     this.state.blockConcurrencyWhile(async () => {
-      this.count = await this.state.storage.get('count') || 0
+      this.counters = await this.state.storage.get('counters') || {}
     })
   }
 
-  static shardStub(env: EnvInterface, prefix: string, shardNumber?: number) {
+  static shardStub(env: EnvInterface, shardNumber?: number) {
     if (shardNumber === null || shardNumber === undefined) {
-      shardNumber = Math.floor(Math.random() * CounterDurableObject.shardCount)
+      shardNumber = Math.floor(Math.random() * this.shardCount)
     }
 
-    const id = env.COUNTER_DO.idFromName(`${prefix}~shard${shardNumber}`)
-    const stub = env.COUNTER_DO.get(id)
+    const namespace = env[this.doNamespace] as DurableObjectNamespace
+    if (!namespace) throw `Namepsace [${this.doNamespace}] does not exists.`
+    const id = namespace.idFromName(`shard${shardNumber}`)
+    const stub = namespace.get(id)
 
     return {
       ...stub,
@@ -56,7 +73,6 @@ export default class CounterDurableObject implements DurableObject {
         let headers = mergeHeaders(requestOrUrl, requestInit)
 
         // Pass shardName in headers to know where the writeToGlobal comes from
-        headers.set(`prefix`, prefix)
         headers.set(`shardName`, stub.name)
 
         return stub.fetch(requestOrUrl, {
@@ -67,15 +83,16 @@ export default class CounterDurableObject implements DurableObject {
     }
   }
 
-  static globalStub(env: EnvInterface, prefix: string) {
-    const id = env.COUNTER_DO.idFromName(`${prefix}~global`)
-    const stub = env.COUNTER_DO.get(id)
+  static globalStub(env: EnvInterface) {
+    const namespace = env[this.doNamespace] as DurableObjectNamespace
+    if (!namespace) throw `Namepsace [${this.doNamespace}] does not exists.`
+    const id = namespace.idFromName(`global`)
+    const stub = namespace.get(id)
 
     return {
       ...stub,
       fetch: (requestOrUrl: string | Request, requestInit?: Request | RequestInit) => {
         let headers = mergeHeaders(requestOrUrl, requestInit)
-        headers.set(`prefix`, prefix)
         headers.set(`shardName`, `global`)
 
         return stub.fetch(requestOrUrl, {
@@ -86,23 +103,31 @@ export default class CounterDurableObject implements DurableObject {
     }
   }
 
-  static async kvTotal(env: EnvInterface, prefix: string) {
-    return await env.KV.get(`${prefix}~total`) || 0
+  static async kvCounters(env: EnvInterface) {
+    return await env.KV.get<Counters>(`${this.kvPrefix}~counters`, 'json')
   }
 
-  async writeToGlobal(event: WriteInfoEvent, shardName: string) {
-    const holdCount = this.count // save the count in a temp variable just in case the global write does not work (we don't want to loose the value)
-    this.count = 0
+  getStaticClass() {
+    return this.constructor as any as typeof CounterDurableObject
+  }
+
+  async writeToGlobal(event: WriteInfoEvent) {
+    const holdCounters = this.counters // save the count in a temp variable just in case the global write does not work (we don't want to loose the value)
+    const holdRequests = this.requests
+    this.counters = {}
+    this.requests = 0
     this.state.storage.deleteAll()
 
     const writeInfo = {
-      count: holdCount,
+      cmd: 'writeToGlobal',
+      counters: holdCounters,
       event,
-      shardName,
+      shardName: this.shardName,
       timestamp: new Date().getTime()
     } as WriteInfo
 
-    const globalStub = CounterDurableObject.globalStub(this.env, this.prefix)
+    const staticClass = this.getStaticClass()
+    const globalStub = staticClass.globalStub(this.env)
     const res = await globalStub.fetch(`/write`, {
       method: 'POST',
       body: JSON.stringify(writeInfo)
@@ -110,68 +135,89 @@ export default class CounterDurableObject implements DurableObject {
 
     if (!res.ok) {
       // hit here means that we were not able to write to global
-      this.count += holdCount // we increment the temp value that was not added
-      this.state.storage.put(`count`, this.count)
+      this.assignCounters(holdCounters, this.counters) // we increment the temp value that was not added
+      this.requests += holdRequests
+      this.saveCounters()
     }
   }
 
-  async writeToKV() {
-    this.env.KV.put(`${this.prefix}~total`, JSON.stringify(this.count))
-    const writeInfo = { event: 'writeToKV', count: this.count, shardName: 'global', timestamp: new Date().getTime() } as WriteInfo
-    this.putWriteInfo(writeInfo)
+  async writeToKV(event: WriteInfoEvent) {
+    this.saveKVCounters()
+    const writeInfo = { cmd: 'writeToKV', event, counters: this.counters, shardName: 'global', timestamp: new Date().getTime() } as WriteInfo
+    this.saveWriteInfo(writeInfo)
     this.writes = 0
   }
 
-  putWriteInfo(writeInfo: WriteInfo) {
+  saveWriteInfo(writeInfo: WriteInfo) {
     const { timestamp } = writeInfo
     const id = nanoid()
     this.state.storage.put(`writes~${timestamp}~${id}`, writeInfo)
   }
 
+  saveCounters() {
+    this.state.storage.put(`counters`, this.counters)
+  }
+
+  saveKVCounters() {
+    const staticClass = this.getStaticClass()
+    this.env.KV.put(`${staticClass.kvPrefix}~counters`, JSON.stringify(this.counters))
+  }
+
+  assignCounters(source: Counters, target: Counters) {
+    Object.keys(source).forEach(key => {
+      const count = source[key]
+      if (!target[key]) target[key] = 0
+      target[key] += count
+    })
+  }
+
   handleGlobalFetch(router: Router<any>) {
+    const staticClass = this.getStaticClass()
+
     router.post(`/write`, async (request: Request) => {
       const writeInfo = await request.json<WriteInfo>()
-      this.count += writeInfo.count
+      this.assignCounters(writeInfo.counters, this.counters)
       this.writes++
-      this.state.storage.put(`count`, this.count)
-      this.putWriteInfo(writeInfo)
+      this.saveCounters()
+      this.saveWriteInfo(writeInfo)
 
       if (this.globalWriteToKVTimeoutId) clearTimeout(this.globalWriteToKVTimeoutId)
 
-      //@ts-ignore
-      this.globalWriteToKVTimeoutId = setTimeout(() => {
-        console.log(`timeout writeToKV`)
-        this.writeToKV()
-      }, this.globalWriteToKVAfter)
+      if (staticClass.globalWriteToKVAfter > 0) {
+        //@ts-ignore
+        this.globalWriteToKVTimeoutId = setTimeout(() => {
+          this.writeToKV(`afterNoRequest`)
+        }, staticClass.globalWriteToKVAfter)
+      }
 
-      if (this.writes > this.globalMinWritesToKV) {
-        console.log(`max exceed writeToKV`)
+      if (this.writes > staticClass.globalMinWritesToKV) {
         clearTimeout(this.globalWriteToKVTimeoutId)
-        this.writeToKV()
+        this.writeToKV(`exceedMaxRequest`)
       }
 
       return new Response(`Global saved.`)
     })
 
     router.get(`/reset`, () => {
-      this.count = 0
+      this.counters = {}
       this.state.storage.deleteAll()
-      this.env.KV.put(`${this.prefix}~total`, JSON.stringify(this.count))
+
       return new Response(`Global reset.`)
     })
 
     router.get(`/shards`, async () => {
-      const counts = []
-      for (let i = 0; i < CounterDurableObject.shardCount; i++) {
-        const stub = CounterDurableObject.shardStub(this.env, this.prefix, i)
-        const res = await stub.fetch(`/count`)
-        counts[i] = await res.json()
+      const shards = []
+
+      for (let i = 0; i < staticClass.shardCount; i++) {
+        const stub = staticClass.shardStub(this.env, i)
+        const res = await stub.fetch(`/counters`)
+        shards[i] = await res.json()
       }
 
-      return new Response(JSON.stringify(counts))
+      return new Response(JSON.stringify(shards))
     })
 
-    router.get(`/writes`, async (request: Request) => {
+    router.get(`/writes`, async () => {
       const result = await this.state.storage.list<WriteInfo>({ prefix: `writes~`, reverse: true })
       const writes = [...result]
 
@@ -187,68 +233,74 @@ export default class CounterDurableObject implements DurableObject {
         if (w.shardName === 'global') return
         if (!shardWrites[w.shardName]) {
           shardWrites[w.shardName] = {
-            incrementCount: 0,
+            counters: {},
             writeCount: 0
           }
         }
 
-        shardWrites[w.shardName].incrementCount += w.count
-        shardWrites[w.shardName].writeCount++
+        const shardInfo = shardWrites[w.shardName]
+        this.assignCounters(w.counters, shardInfo.counters)
+
+        shardInfo.writeCount++
       })
 
-      let totalCount = 0, totalWrite = 0, totalShards = 0
+      let totalWrite = 0, totalShards = 0
       Object.keys(shardWrites).forEach((k) => {
         const sw = shardWrites[k]
-        totalCount += sw.incrementCount
         totalWrite += sw.writeCount
         totalShards++
       })
 
       return new Response(JSON.stringify({
         shardWrites,
-        totalCount,
         totalWrite,
         totalShards
       }, null, 2))
     })
 
-    router.get(`/count`, () => {
-      return new Response(JSON.stringify(this.count))
+    router.get(`/counters`, () => {
+      return new Response(JSON.stringify(this.counters))
     })
   }
 
   handleShardFetch(router: Router<any>) {
-    router.get(`/increment`, async () => {
+    const staticClass = this.getStaticClass()
+
+    router.get(`/increment/:counter`, async (request: Request) => {
+      const { counter } = request.params
       if (this.shardWriteToGlobalTimeoutId) clearTimeout(this.shardWriteToGlobalTimeoutId)
 
-      //@ts-ignore
       // Write to global if no increment after a certain amount of time
-      this.shardWriteToGlobalTimeoutId = setTimeout(async () => {
-        console.log(`timeout writeToGlobal`)
-        await this.writeToGlobal('afterNoIncrement', this.shardName) // the await is here is IMPORTANT
-      }, this.shardWriteToGlobalAfter)
+      if (staticClass.shardWriteToGlobalAfter > 0) {
+        //@ts-ignore
+        this.shardWriteToGlobalTimeoutId = setTimeout(async () => {
+          await this.writeToGlobal('afterNoRequest') // the await is here is IMPORTANT
+        }, staticClass.shardWriteToGlobalAfter)
+      }
 
-      this.count += 1
+      if (!this.counters[counter]) this.counters[counter] = 0
+      this.counters[counter] += 1
+      this.requests++
+
       // Directly write to global if it exceed to max amount in buffer
-      if (this.count >= this.shardMinCountToGlobal) {
-        console.log(`max exceed writeToGlobal`)
+      if (this.requests >= staticClass.shardMinRequestToGlobal) {
         clearTimeout(this.shardWriteToGlobalTimeoutId)
-        await this.writeToGlobal('exceedMaxCount', this.shardName) // the await is here is also IMPORTANT
+        await this.writeToGlobal('exceedMaxRequest') // the await is here is also IMPORTANT
       } else {
-        this.state.storage.put(`count`, this.count)
+        this.saveCounters()
       }
 
       return new Response(this.shardName)
     })
 
     router.get(`/write`, async () => {
-      if (this.count === 0) return new Response(`nothing to write`)
-      await this.writeToGlobal('requestWrite', this.shardName) 
+      if (Object.keys(this.counters).length === 0) return new Response(`nothing to write`)
+      await this.writeToGlobal('requestWrite')
       return new Response(`writeToGlobal`)
     })
 
-    router.get(`/count`, () => {
-      return new Response(JSON.stringify(this.count))
+    router.get(`/counters`, () => {
+      return new Response(JSON.stringify(this.counters))
     })
   }
 
@@ -258,10 +310,6 @@ export default class CounterDurableObject implements DurableObject {
     const shardName = request.headers.get(`shardName`)
     if (!shardName) return new Response(`Missing [shardName].`, { status: 400 })
     else this.shardName = shardName
-
-    const prefix = request.headers.get(`prefix`)
-    if (!prefix) return new Response(`Missing [prefix].`, { status: 400 })
-    else this.prefix = prefix
 
     if (shardName === 'global') this.handleGlobalFetch(router)
     else this.handleShardFetch(router)

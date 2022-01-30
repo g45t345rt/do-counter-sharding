@@ -8,3 +8,7 @@ export const mergeHeaders = (requestOrUrl: string | Request, requestInit?: Reque
   initHeaders.forEach((value, key) => headers.set(key, value))
   return headers
 }
+
+export const nullOrUndefined = (value) => {
+  return value === null || typeof value === 'undefined'
+}

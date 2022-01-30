@@ -8,24 +8,24 @@ const baseUrl = `http://localhost:8787`
 const main = async () => {
   const answers = await inquirer.prompt([
     { name: 'endpoint', type: 'input', message: 'Url endpoint', default: baseUrl },
-    { name: 'prefix', type: 'input', message: 'Counter prefix' },
-    { name: 'reset', type: 'confirm', message: 'Reset global count?', default: true },
+    { name: 'counterName', type: 'input', message: 'Counter name' },
+    { name: 'reset', type: 'confirm', message: 'Reset all counters?', default: false },
     { name: 'maxCount', type: 'number', message: 'Number of /increment request to send', default: 100 }
   ])
 
-  const { endpoint, reset, maxCount, prefix } = answers
+  const { endpoint, reset, maxCount, counterName } = answers
 
   let res = null
 
   if (reset) {
-    res = await fetch(`${endpoint}/${prefix}/global/reset`)
+    res = await fetch(`${endpoint}/global/reset`)
     if (!res.ok) throw res
   }
 
   let counter = 0
   let failedIncrement = 0
   const fetchIncrement = async () => {
-    const res = await fetch(`${endpoint}/${prefix}/increment`)
+    const res = await fetch(`${endpoint}/increment/${counterName}`)
     if (!res.ok) {
       console.log(res)
       failedIncrement++

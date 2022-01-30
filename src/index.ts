@@ -1,35 +1,47 @@
 import { Router } from 'itty-router'
-import CounterDurableObject from './counter'
+import { CounterDurableObject } from './counter'
+
+class Metrics extends CounterDurableObject {
+  static doNamespace = `METRICS_DO` // binding name of your wrangler.toml
+  static kvPrefix = `metrics` // prefix used when storing counters to KV
+  static shardCount = 2 // number of shards that you want - can be change anytime - this should handle 200requests/s
+
+  static shardMinRequestToGlobal = 100  // higher number will write to global less often
+  static globalMinWritesToKV = 100 // higher number will write to KV less often
+
+  // setting 0 here will disable the write timeout
+  static shardWriteToGlobalAfter = 1000 * 5 // 5s in ms - if the DO does not receive anymore increment after 5s it will write to the global counter
+  static globalWriteToKVAfter = 1000 * 5// 5s in ms - if the DO does not receive anymore write from shards after 5s it will write to KV
+}
 
 const router = Router()
 
-router.get(`/:prefix/total`, async (request: Request, env: EnvInterface) => {
-  const { prefix } = request.params
-  const total = await CounterDurableObject.kvTotal(env, prefix)
-  return new Response(`${total}`)
+router.get(`/counters`, async (request: Request, env: EnvInterface) => {
+  const counters = await Metrics.kvCounters(env)
+  return new Response(JSON.stringify(counters))
 })
 
-router.get(`/:prefix/increment`, (request: Request, env: EnvInterface) => {
-  const { prefix } = request.params
-  const stubCounter = CounterDurableObject.shardStub(env, prefix)
-  return stubCounter.fetch(`/increment`, request)
+router.get(`/increment/:counter`, (request: Request, env: EnvInterface) => {
+  const { counter } = request.params
+  const stubCounter = Metrics.shardStub(env)
+  return stubCounter.fetch(`/increment/${counter}`, request)
 })
 
-router.get(`/:prefix/global/:action`, (request: Request, env: EnvInterface) => {
-  const { prefix, action } = request.params
-  const globalStub = CounterDurableObject.globalStub(env, prefix)
+router.get(`/global/:action`, (request: Request, env: EnvInterface) => {
+  const { action } = request.params
+  const globalStub = Metrics.globalStub(env)
   return globalStub.fetch(action, request)
 })
 
-router.get(`/:prefix/shard/:shardNumber/:action`, (request: Request, env: EnvInterface) => {
-  const { prefix, shardNumber, action } = request.params
-  const shardStub = CounterDurableObject.shardStub(env, prefix, Number(shardNumber))
+router.get(`/shard/:shardNumber/:action`, (request: Request, env: EnvInterface) => {
+  const { shardNumber, action } = request.params
+  const shardStub = Metrics.shardStub(env, Number(shardNumber))
   return shardStub.fetch(action, request)
 })
 
 router.all(`*`, () => new Response(`nothing`))
 
-export { CounterDurableObject }
+export { Metrics }
 
 export default {
   fetch: router.handle

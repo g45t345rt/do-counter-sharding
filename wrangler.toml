@@ -5,8 +5,8 @@ compatibility_date = "2021-09-24"
 
 build = { command = "npm run build", upload = { format = "modules", dir = "dist", main = "./index.mjs"  } }
 durable_objects = { bindings = [
-  { name = "COUNTER_DO", class_name = "CounterDurableObject" }
+  { name = "METRICS_DO", class_name = "Metrics" }
 ]}
-migrations = [{ tag = "v1", new_classes = ["CounterDurableObject"] }]
+migrations = [{ tag = "v1", new_classes = ["MetricsDurableObject"] }]
 kv_namespaces = [ { binding = "KV", id = "d1cb4378151545fa9686bc4fe47c2fa6" }]
 miniflare = { kv_persist = true, durable_objects_persist = true }
