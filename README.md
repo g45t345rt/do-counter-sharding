@@ -5,7 +5,7 @@
 `npm start` run DO with miniflare  
 `npm run test-counter` test DO by sending a lot /increment requests  
 
-## Extends CounterDurableObjectClass
+## Extends CounterDurableObject class
 
 Do not export `CounterDurableObject` directly as a binding.  
 Extend from another class to set your preferences and bind it with your class instead.  
@@ -28,7 +28,7 @@ class Metrics extends CounterDurableObject {
 
 #### Global Worker
 
-`/global/reset` reset the global count  
+`/global/reset` reset all counters from global  
 `/global/counters` view global counters from global DurableObject storage  
 `/global/writes` display write events from all shards (useful for understanding how it works)  
 `/global/shardWrites` display write counts with sum total  
@@ -48,21 +48,22 @@ class Metrics extends CounterDurableObject {
 
 #### Global Stub
 
-Use `CounterDurableObject.globalStub(env, prefix)`
+Use `CounterDurableObject.globalStub(env)`
 `/reset`, `/write`, `/counters`, `/writes`, `/shardWrites`, `/shards`
 
 ```ts
-  const globalStub = CounterDurableObject.globalStub(env, prefix)
+  // Metrics is a class extending CounterDurableObject
+  const globalStub = Metrics.globalStub(env)
   globalStub.fetch(`/reset`)
 ```
 
 #### Shard Stub
 
-Use `CounterDurableObject.shardStub(env, prefix, shardNumber?)`
+Use `CounterDurableObject.shardStub(env, shardNumber?)`
 `/counters`, `/write`, `/increment/:counter`
 
 ```ts
-  const shardStub = CounterDurableObject.shardStub(env, prefix)
+  const shardStub = Metrics.shardStub(env)
   shardStub.fetch(`/increment/{counterName}`)
 ```
 
