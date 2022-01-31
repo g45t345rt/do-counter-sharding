@@ -1,16 +1,18 @@
 import ittyRouter from 'itty-router'
 import { nanoid } from 'nanoid'
 
-import { mergeHeaders, nullOrUndefined } from './misc'
+import { CounterGlobalStub } from './globalStub'
+import { CounterShardStub } from './shardStub'
+import { nullOrUndefined } from './misc'
 
 type WriteInfoEvent = 'exceedMaxRequest' | 'afterNoRequest' | 'requestWrite'
 type WriteInfoCMD = 'writeToKV' | 'writeToGlobal'
 
-interface Counters {
+export interface Counters {
   [key: string]: number
 }
 
-type WriteInfo = {
+export type WriteInfo = {
   counters: Counters
   shardName: string
   cmd: WriteInfoCMD
@@ -66,49 +68,15 @@ export abstract class CounterDurableObject implements DurableObject {
   }
 
   static shardStub(env, shardNumber?: number) {
-    if (shardNumber === null || shardNumber === undefined) {
-      shardNumber = Math.floor(Math.random() * this.shardCount)
-    }
-
     const namespace = env[this.doNamespace] as DurableObjectNamespace
     if (!namespace) throw `DurableObject Namespace [${this.doNamespace}] not set in env.`
-    const id = namespace.idFromName(`shard${shardNumber}`)
-    const stub = namespace.get(id)
-
-    return {
-      ...stub,
-      fetch: (requestOrUrl: string | Request, requestInit?: Request | RequestInit) => {
-        let headers = mergeHeaders(requestOrUrl, requestInit)
-
-        // Pass shardName in headers to know where the writeToGlobal comes from
-        headers.set(`shardName`, stub.name)
-
-        return stub.fetch(requestOrUrl, {
-          ...requestInit,
-          headers
-        })
-      }
-    }
+    return new CounterShardStub({ namespace, shardCount: this.shardCount, shardNumber })
   }
 
   static globalStub(env) {
     const namespace = env[this.doNamespace] as DurableObjectNamespace
     if (!namespace) throw `DurableObject Namespace [${this.doNamespace}] not set in env.`
-    const id = namespace.idFromName(`global`)
-    const stub = namespace.get(id)
-
-    return {
-      ...stub,
-      fetch: (requestOrUrl: string | Request, requestInit?: Request | RequestInit) => {
-        let headers = mergeHeaders(requestOrUrl, requestInit)
-        headers.set(`shardName`, `global`)
-
-        return stub.fetch(requestOrUrl, {
-          ...requestInit,
-          headers
-        })
-      }
-    }
+    return new CounterGlobalStub(namespace)
   }
 
   static async kvCounters(env) {
@@ -138,10 +106,7 @@ export abstract class CounterDurableObject implements DurableObject {
 
     const staticClass = this.getStaticClass()
     const globalStub = staticClass.globalStub(this.env)
-    const res = await globalStub.fetch(`/write`, {
-      method: 'POST',
-      body: JSON.stringify(writeInfo)
-    })
+    const res = await globalStub.write(writeInfo)
 
     if (!res.ok) {
       // hit here means that we were not able to write to global

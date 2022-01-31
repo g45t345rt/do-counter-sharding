@@ -18,8 +18,8 @@
       "@cloudflare/workers-types"
     ],
   },
-  "files": [
-    "./src/index.ts"
+  "include": [
+    "./src"
   ],
   "exclude": [
     "node_modules"

@@ -65,23 +65,35 @@ Check the test file ./test/index.ts how to implement in a worker
 
 #### Global Stub
 
-Use `CounterDurableObject.globalStub(env)`
-`/reset/:counterName`, `/write`, `/counters`, `/writes`, `/shardWrites`, `/shards`
+Using fetch `/reset/:counterName`, `/write`, `/counters`, `/writes`, `/shardWrites`, `/shards`
 
 ```ts
   // Metrics is a class extending CounterDurableObject
   const globalStub = Metrics.globalStub(env)
-  globalStub.fetch(`/reset/{counterName}`)
+  globalStub.fetch(`/reset/{counterName}`, { method: `POST` })
+```
+
+you can also use method directly
+
+```ts
+  const globalStub = Metrics.globalStub(env)
+  globalStub.reset(`{counterName}`)
 ```
 
 #### Shard Stub
 
-Use `CounterDurableObject.shardStub(env, shardNumber?)`
-`/counters`, `/write`, `/increment/:counter`
+Using fetch `/counters`, `/write`, `/increment/:counterName`
 
 ```ts
   const shardStub = Metrics.shardStub(env)
-  shardStub.fetch(`/increment/{counterName}`)
+  shardStub.fetch(`/increment/{counterName}`, { method: `POST` } )
+```
+
+you can also use method directly
+
+```ts
+  const shardStub = Metrics.shardStub(env)
+  shardStub.increment(`{counterName}`)
 ```
 
 Leaving `shardNumber` empty will randomly choose a shard for you

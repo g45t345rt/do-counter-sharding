@@ -33,13 +33,14 @@ router.all(`/counters`, async (request: Request, env: EnvInterface) => {
 router.all(`/increment/:counter`, (request: Request, env) => {
   const { counter } = request.params
   const stubCounter = Metrics.shardStub(env)
-  return stubCounter.fetch(`/increment/${counter}`, request)
+  return stubCounter.increment(counter) // you can use the method wrapping fetch(`/increment/...`)
+  //return stubCounter.fetch(`/increment/${counter}`, request) // or directly use fetch()
 })
 
 router.all(`/global/:action/:counterName?`, (request: Request, env: EnvInterface) => {
   const { action, counterName = `` } = request.params
   const globalStub = Metrics.globalStub(env)
-  return globalStub.fetch(`${action}/${counterName}`, request)
+  return globalStub.fetch(`/${action}/${counterName}`, request)
 })
 
 router.all(`/shard/:shardNumber/:action`, (request: Request, env: EnvInterface) => {
