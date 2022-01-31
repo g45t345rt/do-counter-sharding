@@ -4,8 +4,11 @@
     "esModuleInterop": true,
     "moduleResolution": "Node",
     "downlevelIteration": true,
+    "declaration": true,
+    "emitDeclarationOnly": true,
     "resolveJsonModule": true,
     "target": "ES6",
+    "outDir": "./dist",
     "lib": [
       "WebWorker",
       "DOM",
@@ -15,6 +18,9 @@
       "@cloudflare/workers-types"
     ],
   },
+  "files": [
+    "./src/index.ts"
+  ],
   "exclude": [
     "node_modules"
   ]

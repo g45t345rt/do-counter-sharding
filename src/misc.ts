@@ -3,7 +3,7 @@ export const mergeHeaders = (requestOrUrl: string | Request, requestInit?: Reque
   if (requestOrUrl instanceof Request && requestOrUrl.headers) headers = new Headers(requestOrUrl.headers)
 
   let initHeaders = new Headers()
-  if (requestInit && requestInit.headers) initHeaders = new Headers(requestInit.headers)
+  if (requestInit && requestInit) initHeaders = new Headers(requestInit.headers)
 
   initHeaders.forEach((value, key) => headers.set(key, value))
   return headers

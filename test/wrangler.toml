@@ -3,7 +3,7 @@ type = "javascript"
 workers_dev = true
 compatibility_date = "2021-09-24"
 
-build = { command = "npm run build", upload = { format = "modules", dir = "dist", main = "./index.mjs"  } }
+build = { command = "npm run build-test", upload = { format = "modules", dir = "dist", main = "./index.mjs"  } }
 durable_objects = { bindings = [
   { name = "METRICS_DO", class_name = "Metrics" }
 ]}

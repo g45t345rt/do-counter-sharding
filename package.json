@@ -1,9 +1,15 @@
 {
   "name": "do-counter-sharding",
+  "version": "1.0.0",
+  "main": "./dist/index.js",
+  "files": [
+    "dist"
+  ],
   "scripts": {
-    "build": "esbuild ./src/index.ts --format=esm --bundle --outdir=dist --out-extension:.js=.mjs",
-    "start": "miniflare -w",
-    "test-counter": "ts-node ./scripts/requests.test.ts"
+    "build": "esbuild ./src/index.ts --format=esm --bundle --outdir=./dist && tsc",
+    "build-test": "esbuild ./test/index.ts --format=esm --bundle --outdir=./test/dist --out-extension:.js=.mjs",
+    "test": "miniflare -w --wrangler-config ./test/wrangler.toml",
+    "test-counter": "ts-node ./test/scripts/requests.test.ts"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^3.3.1",
