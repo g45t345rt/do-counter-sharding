@@ -40,10 +40,10 @@ export class CounterShardStub {
     })
   }
 
-  increments(increments: [{ name: string, value: number }]) {
+  increments(counters: Counters) {
     return this.fetch(`/increments`, {
       method: `POST`,
-      body: JSON.stringify(increments)
+      body: JSON.stringify(counters)
     })
   }
 
