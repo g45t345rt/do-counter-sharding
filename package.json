@@ -1,6 +1,6 @@
 {
   "name": "do-counter-sharding",
-  "version": "1.1.1",
+  "version": "1.2.0",
   "main": "./dist/index.js",
   "files": [
     "dist"
@@ -10,6 +10,7 @@
     "build-test": "esbuild ./test/index.ts --format=esm --bundle --outdir=./test/dist --out-extension:.js=.mjs",
     "test": "miniflare -w --wrangler-config ./test/wrangler.toml",
     "test-counter": "ts-node ./test/scripts/requests.test.ts",
+    "test-multi-counters": "ts-node ./test/scripts/increments.test.ts",
     "prepublishOnly": "npm run build"
   },
   "repository": {

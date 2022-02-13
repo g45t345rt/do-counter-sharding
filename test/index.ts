@@ -37,6 +37,11 @@ router.all(`/increment/:counter`, (request: Request, env) => {
   //return stubCounter.fetch(`/increment/${counter}`, request) // or directly use fetch()
 })
 
+router.all(`/increments`, (request: Request, env) => {
+  const stubCounter = Metrics.shardStub(env)
+  return stubCounter.fetch(`/increments`, request)
+})
+
 router.all(`/global/:action/:counterName?`, (request: Request, env: EnvInterface) => {
   const { action, counterName = `` } = request.params
   const globalStub = Metrics.globalStub(env)

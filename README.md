@@ -45,21 +45,22 @@ Check the test file ./test/index.ts how to implement in a worker
 
 #### Global Worker
 
-`/global/reset/:counterName` reset specifc counter from global  
-`/global/counters` view global counters from global DurableObject storage  
-`/global/writes` display write events from all shards (useful for understanding how it works)  
-`/global/shardWrites` display write counts with sum total  
-`/global/shards` view shards current count  
+`POST` `/global/reset/:counterName` reset specific counter from global  
+`GET` `/global/counters` view global counters from global DurableObject storage  
+`GET` `/global/writes` display write events from all shards (useful for understanding how it works)  
+`GET` `/global/shardWrites` display write counts with sum total  
+`GET` `/global/shards` view shards current count  
 
 #### Shard Worker
 
-`/shard/:shardNumber/counters` view current shard counters
-`/shard/:shardNumber/write` write to global manually (useful if there was a bug and `exceedMaxCount or afterNoIncrement` did not hit)  
+`GET` `/shard/:shardNumber/counters` view current shard counters
+`POST` `/shard/:shardNumber/write` write to global manually (useful if there was a bug and `exceedMaxCount or afterNoIncrement` did not hit)  
 
 #### Worker
 
-`/increment/:counterName` increment a global counter by dispatching work to other shards  
-`/counters` view global counters from KV
+`POST` `/increment/:counterName` increment a global counter by dispatching work to other shards  
+`POST` `/increments` increment global multiple counters from shards
+`GET` `/counters` view global counters from KV
 
 ### From Stub perspective
 
@@ -82,18 +83,22 @@ you can also use method directly
 
 #### Shard Stub
 
-Using fetch `/counters`, `/write`, `/increment/:counterName`
+Using fetch `/counters`, `/write`, `/increment/:counterName`, `/increments`
 
 ```ts
   const shardStub = Metrics.shardStub(env)
   shardStub.fetch(`/increment/{counterName}`, { method: `POST` } )
+  //you can also use method directly
+  shardStub.increment(`{counterName}`)
 ```
 
-you can also use method directly
+increment multiple counters in one request
 
 ```ts
   const shardStub = Metrics.shardStub(env)
-  shardStub.increment(`{counterName}`)
+  shardStub.fetch(`/increments`, { method: `POST`, body: JSON.stringify({ counter1: 1, counter2: 1 }) } )
+  //you can also use method directly
+  shardStub.increments({ counter1: 1, counter2: 1 })
 ```
 
 Leaving `shardNumber` empty will randomly choose a shard for you

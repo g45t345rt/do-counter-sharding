@@ -40,6 +40,13 @@ export class CounterShardStub {
     })
   }
 
+  increments(increments: [{ name: string, value: number }]) {
+    return this.fetch(`/increments`, {
+      method: `POST`,
+      body: JSON.stringify(increments)
+    })
+  }
+
   write() {
     return this.fetch(`/write`, {
       method: 'POST'

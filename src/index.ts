@@ -146,9 +146,29 @@ export abstract class CounterDurableObject implements DurableObject {
     })
   }
 
-  handleGlobalFetch(router: ittyRouter.Router<any>) {
+  setupWriteToKVTimeout() {
     const staticClass = this.getStaticClass()
 
+    if (this.globalWriteToKVTimeoutId) clearTimeout(this.globalWriteToKVTimeoutId)
+
+    if (staticClass.globalWriteToKVAfter > 0) {
+      //@ts-ignore
+      this.globalWriteToKVTimeoutId = setTimeout(() => {
+        this.writeToKV(`afterNoRequest`)
+      }, staticClass.globalWriteToKVAfter)
+    }
+  }
+
+  setupWriteToKVMaxRequest() {
+    const staticClass = this.getStaticClass()
+
+    if (this.writes > staticClass.globalMinWritesToKV) {
+      clearTimeout(this.globalWriteToKVTimeoutId)
+      this.writeToKV(`exceedMaxRequest`)
+    }
+  }
+
+  handleGlobalFetch(router: ittyRouter.Router<any>) {
     router.post(`/write`, async (request: ittyRouter.Request) => {
       const writeInfo = await request.json() as WriteInfo
       this.assignCounters(writeInfo.counters, this.counters)
@@ -156,19 +176,8 @@ export abstract class CounterDurableObject implements DurableObject {
       this.saveCounters()
       this.saveWriteInfo(writeInfo)
 
-      if (this.globalWriteToKVTimeoutId) clearTimeout(this.globalWriteToKVTimeoutId)
-
-      if (staticClass.globalWriteToKVAfter > 0) {
-        //@ts-ignore
-        this.globalWriteToKVTimeoutId = setTimeout(() => {
-          this.writeToKV(`afterNoRequest`)
-        }, staticClass.globalWriteToKVAfter)
-      }
-
-      if (this.writes > staticClass.globalMinWritesToKV) {
-        clearTimeout(this.globalWriteToKVTimeoutId)
-        this.writeToKV(`exceedMaxRequest`)
-      }
+      this.setupWriteToKVTimeout()
+      this.setupWriteToKVMaxRequest()
 
       return new Response(`Global saved.`)
     })
@@ -183,6 +192,7 @@ export abstract class CounterDurableObject implements DurableObject {
     })
 
     router.get(`/shards`, async () => {
+      const staticClass = this.getStaticClass()
       const shards = []
 
       for (let i = 0; i < staticClass.shardCount; i++) {
@@ -240,9 +250,33 @@ export abstract class CounterDurableObject implements DurableObject {
     })
   }
 
-  handleShardFetch(router: ittyRouter.Router<any>) {
+  setupWriteToGlobalTimeout() {
     const staticClass = this.getStaticClass()
 
+    if (this.shardWriteToGlobalTimeoutId) clearTimeout(this.shardWriteToGlobalTimeoutId)
+
+    // Write to global if no increment after a certain amount of time
+    if (staticClass.shardWriteToGlobalAfter > 0) {
+      //@ts-ignore
+      this.shardWriteToGlobalTimeoutId = setTimeout(async () => {
+        await this.writeToGlobal('afterNoRequest') // the await is here is IMPORTANT
+      }, staticClass.shardWriteToGlobalAfter)
+    }
+  }
+
+  async setupWriteToGlobalMaxRequest() {
+    const staticClass = this.getStaticClass()
+
+    // Directly write to global if it exceed to max amount in buffer
+    if (this.requests >= staticClass.shardMinRequestToGlobal) {
+      clearTimeout(this.shardWriteToGlobalTimeoutId)
+      await this.writeToGlobal('exceedMaxRequest') // the await is here is also IMPORTANT
+    } else {
+      this.saveCounters()
+    }
+  }
+
+  handleShardFetch(router: ittyRouter.Router<any>) {
     router.post(`/increment/:counter`, async (request: ittyRouter.Request) => {
       const { counter } = request.params
 
@@ -260,29 +294,44 @@ export abstract class CounterDurableObject implements DurableObject {
         }
       }
 
-      if (this.shardWriteToGlobalTimeoutId) clearTimeout(this.shardWriteToGlobalTimeoutId)
-
-      // Write to global if no increment after a certain amount of time
-      if (staticClass.shardWriteToGlobalAfter > 0) {
-        //@ts-ignore
-        this.shardWriteToGlobalTimeoutId = setTimeout(async () => {
-          await this.writeToGlobal('afterNoRequest') // the await is here is IMPORTANT
-        }, staticClass.shardWriteToGlobalAfter)
-      }
-
       if (!this.counters[counter]) this.counters[counter] = 0
       this.counters[counter] += value
-      this.requests++
 
-      // Directly write to global if it exceed to max amount in buffer
-      if (this.requests >= staticClass.shardMinRequestToGlobal) {
-        clearTimeout(this.shardWriteToGlobalTimeoutId)
-        await this.writeToGlobal('exceedMaxRequest') // the await is here is also IMPORTANT
-      } else {
-        this.saveCounters()
+      this.setupWriteToGlobalTimeout()
+      this.requests++
+      this.setupWriteToGlobalMaxRequest()
+
+      return new Response(`Value incremented in ${this.shardName}`)
+    })
+
+    router.post(`/increments`, async (request: ittyRouter.Request) => {
+      const body = await request.text()
+      if (!body) return new Response(`[body] is empty.`)
+
+      let counters = {} as Counters
+      try {
+        counters = JSON.parse(body)
+      } catch {
+        return new Response(`Invalid json.`, { status: 400 })
       }
 
-      return new Response(this.shardName)
+      const counterLength = Object.keys(counters).length
+      if (counterLength === 0) return new Response(`[body] is empty.`, { status: 400 })
+
+      for (let i = 0; i < counterLength; i++) {
+        const counter = Object.keys(counters)[i]
+        const value = counters[counter]
+        if (typeof value !== 'number') return new Response(`Value of [${counter}] must be a number.`, { status: 400 })
+
+        if (!this.counters[counter]) this.counters[counter] = 0
+        this.counters[counter] += value
+      }
+
+      this.setupWriteToGlobalTimeout()
+      this.requests++
+      this.setupWriteToGlobalMaxRequest()
+
+      return new Response(`Value incremented in ${this.shardName}`)
     })
 
     router.post(`/write`, async () => {
